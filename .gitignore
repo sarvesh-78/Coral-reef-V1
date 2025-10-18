@@ -1,0 +1,80 @@
+# =========================
+# 🧠 Python / ML
+# =========================
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+venv/
+env/
+*.log
+.ipynb_checkpoints/
+.DS_Store
+
+# TensorFlow / PyTorch checkpoints & weights
+*.h5
+*.ckpt
+*.tflite
+*.pb
+*.onnx
+
+# Dataset directories (don't upload raw data!)
+dataset/
+data/
+tmp/
+logs/
+
+# VSCode settings
+.vscode/
+
+# =========================
+# 📱 React Native / Flutter
+# =========================
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# iOS
+ios/Pods/
+ios/Podfile.lock
+ios/build/
+
+# Android
+android/.gradle/
+android/app/build/
+android/build/
+
+# Flutter build
+build/
+.flutter-plugins
+.packages
+.pub-cache
+.pub/
+*.lock
+
+# Misc
+*.iml
+.idea/
+*.keystore
+*.jks
+
+# =========================
+# 🧰 General
+# =========================
+# OS files
+Thumbs.db
+.DS_Store
+
+# Backup files
+*.bak
+*.tmp
+*.swp
+
+# =========================
+# 🚫 Secrets (if any)
+# =========================
+*.env
+keys.json
+secret_*.json
