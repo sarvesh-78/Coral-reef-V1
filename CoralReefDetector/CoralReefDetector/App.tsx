@@ -1,6 +1,11 @@
 // App.tsx
 import 'react-native-url-polyfill/auto'
 import React, { useState, useEffect } from 'react';
+import RNFS from 'react-native-fs'
+import { decode } from 'base-64'
+
+global.atob = decode
+
 import {
   StatusBar,
   StyleSheet,
@@ -218,30 +223,81 @@ function AppContent() {
   };
 
   const uploadToSupabase = async () => {
-    if (!patchResult || !location) {
+    if (!patchResult || !location || images.length === 0) {
       Alert.alert("No data to upload");
       return;
     }
 
-    const payload = {
-      image_url: images[0]?.uri,
-      latitude: location.latitude,
-      longitude: location.longitude,
-      surface_temp: parseFloat(surfaceTemp),
-      wqi: parseFloat(wqi),
-      ph: parseFloat(ph),
-      patch_stress: patchResult.patchStress,
-      final_stress_index: patchResult.finalStressIndex,
-      main_stress_factor: patchResult.mainStress,
-      dominant_label: patchResult.label,
-      recovery: patchResult.recovery
-    };
+    try {
+      const imageUri = images[0].uri;
+      const fileName = `coral_${Date.now()}.jpg`;
 
-    const { error } = await supabase.from('coral_scans').insert([payload]);
+      // Remove file:// prefix for RNFS
+      const filePath = imageUri.replace('file://', '');
 
-    if (error) Alert.alert("Upload Failed", error.message);
-    else Alert.alert("Uploaded ✅");
+      // Read file as base64
+      const base64 = await RNFS.readFile(filePath, 'base64');
+
+      // Convert base64 to Uint8Array
+      const binaryString = atob(base64);
+      const len = binaryString.length;
+      const bytes = new Uint8Array(len);
+
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+
+      // Upload to Supabase Storage
+      const { error: uploadError } = await supabase.storage
+        .from('coral-images')
+        .upload(fileName, bytes, {
+          contentType: 'image/jpeg',
+          upsert: true,
+        });
+
+      if (uploadError) {
+        console.log(uploadError);
+        Alert.alert("Image upload failed", JSON.stringify(uploadError));
+        return;
+      }
+
+      const { data } = supabase.storage
+        .from('coral-images')
+        .getPublicUrl(fileName);
+
+      const imageUrl = data.publicUrl;
+
+      const payload = {
+        image_url: imageUrl,
+        latitude: location.latitude,
+        longitude: location.longitude,
+        surface_temp: parseFloat(surfaceTemp),
+        wqi: parseFloat(wqi),
+        ph: parseFloat(ph),
+        patch_stress: patchResult.patchStress,
+        final_stress_index: patchResult.finalStressIndex,
+        main_stress_factor: patchResult.mainStress,
+        dominant_label: patchResult.label,
+        recovery: patchResult.recovery
+      };
+
+      const { error } = await supabase
+        .from('coral_scans')
+        .insert([payload]);
+
+      if (error) {
+        Alert.alert("Database insert failed", error.message);
+      } else {
+        Alert.alert("Uploaded ✅");
+      }
+
+    } catch (err) {
+      Alert.alert("Upload error", String(err));
+    }
   };
+
+
+
 
   const clear = () => {
     setImages([]);

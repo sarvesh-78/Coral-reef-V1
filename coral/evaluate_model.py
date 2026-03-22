@@ -11,7 +11,7 @@ from tensorflow.keras.models import load_model
 class_names = ["Bleached_Mild", "Bleached_Moderate", "Bleached_Severe", "Dead", "Healthy"]
 
 # 🔸 Load your trained model (use the fine-tuned one if you have)
-model = load_model("coral_model_finetuned.h5")  # or coral_model.h5 if not fine-tuned
+model = load_model("coral_model_finetuned.h5", compile=False)  # or coral_model.h5 if not fine-tuned
 
 # 🪄 Validation data generator
 val_datagen = ImageDataGenerator(rescale=1./255)
