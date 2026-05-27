@@ -1,3 +1,4 @@
+
 // App.tsx
 import 'react-native-url-polyfill/auto'
 import React, { useState, useEffect } from 'react';
@@ -25,12 +26,6 @@ import CoralDetector from './src/CoralDetector';
 import { launchImageLibrary, launchCamera } from 'react-native-image-picker';
 import Geolocation from 'react-native-geolocation-service';
 
-import {
-  computePatchLabel,
-  computePatchStress,
-  computeStressIndex
-} from './src/stressScore';
-
 import { supabase } from './src/supabaseClient';
 import HistoryScreen from './src/historyScreen';
 
@@ -50,14 +45,23 @@ function AppContent() {
 
   const [modelLoaded, setModelLoaded] = useState(false);
   const [collecting, setCollecting] = useState(false);
-  const [images, setImages] = useState<Array<{ uri: string; scores?: number[] }>>([]);
+  const [images, setImages] = useState<Array<{ uri: string }>>([]);
 
-  const [surfaceTemp, setSurfaceTemp] = useState("28");
-  const [wqi, setWqi] = useState("80");
-  const [ph, setPh] = useState("8.1");
+  // ✅ NEW ENV INPUTS
+  const [SSTA_DHW, setSSTA_DHW] = useState("");
+  const [TSA_DHW, setTSA_DHW] = useState("");
+  const [SSTA, setSSTA] = useState("");
+  const [SSTA_Frequency, setSSTA_Frequency] = useState("");
+  const [Temperature_Maximum, setTemperature_Maximum] = useState("");
+  const [Turbidity, setTurbidity] = useState("");
+  const [Depth_m, setDepth_m] = useState("");
 
   const [location, setLocation] = useState<{ latitude: number, longitude: number } | null>(null);
-  const [patchResult, setPatchResult] = useState<any>(null);
+
+  // ✅ OUTPUTS
+  const [coralStatus, setCoralStatus] = useState<string | null>(null);
+  const [confidence, setConfidence] = useState<number | null>(null);
+  const [bleachingPrediction, setBleachingPrediction] = useState<number | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -102,9 +106,12 @@ function AppContent() {
     try {
       const filePath = await CoralDetector.copyContentUriToFile(uri);
       const res = await CoralDetector.predictCoral(filePath);
-      const scores = Array.isArray(res.scores) ? res.scores : null;
 
-      setImages(prev => [...prev, { uri, scores: scores ?? undefined }]);
+      setImages(prev => [...prev, { uri }]);
+
+      setCoralStatus(res.label);
+      setConfidence(res.scores ? Math.max(...res.scores) : null);
+
     } catch (e) {
       Alert.alert('Prediction failed', String(e));
     }
@@ -136,94 +143,59 @@ function AppContent() {
     const loc = await requestLocation();
     setLocation(loc);
     setImages([]);
-    setPatchResult(null);
+    setCoralStatus(null);
+    setBleachingPrediction(null);
     setCollecting(true);
   };
 
-  const calculateTempStress = (temp: number) => {
-    if (temp <= 29) return 0.2;
-    if (temp <= 31) return 0.6;
-    return 1.0;
-  };
+  // ✅ TEMP BLEACHING PREDICTION
+  const predictBleaching = async () => {
+    try {
+      const input = [
+        parseFloat(SSTA_DHW),
+        parseFloat(TSA_DHW),
+        parseFloat(SSTA),
+        parseFloat(SSTA_Frequency),
+        parseFloat(Temperature_Maximum),
+        parseFloat(Turbidity),
+        parseFloat(Depth_m),
 
-  const calculatePollutionStress = (wqi: number) => {
-    if (wqi >= 80) return 0.2;
-    if (wqi >= 60) return 0.6;
-    return 1.0;
-  };
+        // temporal approximations
+        parseFloat(TSA_DHW),
+        parseFloat(TSA_DHW),
+        parseFloat(SSTA),
+        parseFloat(TSA_DHW)
+      ];
 
-  const calculateAcidStress = (ph: number) => {
-    if (ph >= 8 && ph <= 8.4) return 0.2;
-    if (ph >= 7.7) return 0.6;
-    return 1.0;
-  };
+      const response = await fetch("http://192.168.1.34:5000/predict", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ input })
+      });
 
-  const getStressLabel = (value: number) => {
-    if (value === 1.0) return "HIGH";
-    if (value === 0.6) return "MODERATE";
-    return "LOW";
-  };
+      const data = await response.json();
 
-  const finishPatch = () => {
-    const validScores = images.map(i => i.scores).filter(Boolean) as number[][];
-    if (validScores.length === 0 || !location) {
-      Alert.alert('Missing data');
-      return;
+      if (data.error) {
+        Alert.alert("Server Error", data.error);
+        return;
+      }
+
+      let value = data.prediction;
+
+      // clamp between 0 and 100
+      value = Math.max(0, Math.min(100, value));
+
+      setBleachingPrediction(value);
+
+    } catch (err) {
+      Alert.alert("Prediction error", String(err));
     }
-
-    const temperature = parseFloat(surfaceTemp);
-    const waterQuality = parseFloat(wqi);
-    const phLevel = parseFloat(ph);
-
-    const result = computePatchLabel(validScores);
-    const patchStress = computePatchStress(validScores);
-    const normalizedStress = patchStress / 4;
-
-    const tempStress = calculateTempStress(temperature);
-    const pollStress = calculatePollutionStress(waterQuality);
-    const acidStress = calculateAcidStress(phLevel);
-
-    const all = [
-      { name: 'Temperature', value: tempStress },
-      { name: 'Pollution', value: pollStress },
-      { name: 'Acidification', value: acidStress }
-    ];
-
-    const mainStress = all.sort((a, b) => b.value - a.value)[0].name;
-
-    const finalStressIndex = computeStressIndex(
-      normalizedStress,
-      tempStress,
-      pollStress
-    );
-
-    let recovery = 'High';
-    if (result.label === "Dead") {
-      recovery = 'Low'
-    }
-    else if (finalStressIndex > 0.7) {
-      recovery = 'Low'
-    }
-    else if (finalStressIndex > 0.4) {
-      recovery = 'Moderate'
-    }
-
-    setPatchResult({
-      ...result,
-      patchStress,
-      finalStressIndex,
-      recovery,
-      mainStress,
-      tempStress,
-      pollutionStress: pollStress,
-      acidStress
-    });
-
-    setCollecting(false);
   };
 
   const uploadToSupabase = async () => {
-    if (!patchResult || !location || images.length === 0) {
+    if (!location || images.length === 0) {
       Alert.alert("No data to upload");
       return;
     }
@@ -232,13 +204,9 @@ function AppContent() {
       const imageUri = images[0].uri;
       const fileName = `coral_${Date.now()}.jpg`;
 
-      // Remove file:// prefix for RNFS
       const filePath = imageUri.replace('file://', '');
-
-      // Read file as base64
       const base64 = await RNFS.readFile(filePath, 'base64');
 
-      // Convert base64 to Uint8Array
       const binaryString = atob(base64);
       const len = binaryString.length;
       const bytes = new Uint8Array(len);
@@ -247,7 +215,6 @@ function AppContent() {
         bytes[i] = binaryString.charCodeAt(i);
       }
 
-      // Upload to Supabase Storage
       const { error: uploadError } = await supabase.storage
         .from('coral-images')
         .upload(fileName, bytes, {
@@ -256,7 +223,6 @@ function AppContent() {
         });
 
       if (uploadError) {
-        console.log(uploadError);
         Alert.alert("Image upload failed", JSON.stringify(uploadError));
         return;
       }
@@ -271,14 +237,19 @@ function AppContent() {
         image_url: imageUrl,
         latitude: location.latitude,
         longitude: location.longitude,
-        surface_temp: parseFloat(surfaceTemp),
-        wqi: parseFloat(wqi),
-        ph: parseFloat(ph),
-        patch_stress: patchResult.patchStress,
-        final_stress_index: patchResult.finalStressIndex,
-        main_stress_factor: patchResult.mainStress,
-        dominant_label: patchResult.label,
-        recovery: patchResult.recovery
+
+        coral_status: coralStatus,
+        confidence: confidence,
+
+        bleaching_percentage: bleachingPrediction,
+
+        ssta_dhw: parseFloat(SSTA_DHW),
+        tsa_dhw: parseFloat(TSA_DHW),
+        ssta: parseFloat(SSTA),
+        ssta_frequency: parseFloat(SSTA_Frequency),
+        temperature_maximum: parseFloat(Temperature_Maximum),
+        turbidity: parseFloat(Turbidity),
+        depth_m: parseFloat(Depth_m)
       };
 
       const { error } = await supabase
@@ -296,12 +267,10 @@ function AppContent() {
     }
   };
 
-
-
-
   const clear = () => {
     setImages([]);
-    setPatchResult(null);
+    setCoralStatus(null);
+    setBleachingPrediction(null);
     setCollecting(false);
   };
 
@@ -328,8 +297,8 @@ function AppContent() {
           <Text style={styles.buttonText}>Camera</Text>
         </Pressable>
 
-        <Pressable style={styles.button} onPress={finishPatch}>
-          <Text style={styles.buttonText}>Finish</Text>
+        <Pressable style={styles.button} onPress={predictBleaching}>
+          <Text style={styles.buttonText}>Predict Bleaching</Text>
         </Pressable>
 
         <Pressable style={styles.button} onPress={uploadToSupabase}>
@@ -345,15 +314,28 @@ function AppContent() {
         </Pressable>
       </View>
 
+      {/* ✅ INPUTS */}
       <View style={{ marginTop: 10 }}>
-        <Text>Temperature (°C)</Text>
-        <TextInput style={styles.input} value={surfaceTemp} onChangeText={setSurfaceTemp} />
+        <Text>SSTA_DHW</Text>
+        <TextInput style={styles.input} value={SSTA_DHW} onChangeText={setSSTA_DHW} />
 
-        <Text>WQI</Text>
-        <TextInput style={styles.input} value={wqi} onChangeText={setWqi} />
+        <Text>TSA_DHW</Text>
+        <TextInput style={styles.input} value={TSA_DHW} onChangeText={setTSA_DHW} />
 
-        <Text>pH</Text>
-        <TextInput style={styles.input} value={ph} onChangeText={setPh} />
+        <Text>SSTA</Text>
+        <TextInput style={styles.input} value={SSTA} onChangeText={setSSTA} />
+
+        <Text>SSTA Frequency</Text>
+        <TextInput style={styles.input} value={SSTA_Frequency} onChangeText={setSSTA_Frequency} />
+
+        <Text>Max Temperature</Text>
+        <TextInput style={styles.input} value={Temperature_Maximum} onChangeText={setTemperature_Maximum} />
+
+        <Text>Turbidity</Text>
+        <TextInput style={styles.input} value={Turbidity} onChangeText={setTurbidity} />
+
+        <Text>Depth (m)</Text>
+        <TextInput style={styles.input} value={Depth_m} onChangeText={setDepth_m} />
       </View>
 
       <ScrollView>
@@ -362,24 +344,20 @@ function AppContent() {
         ))}
       </ScrollView>
 
-      {patchResult && (
-        <View style={{ marginTop: 10 }}>
-          <Text>Dominant Label: {patchResult.label}</Text>
-          <Text>Main Stress: {patchResult.mainStress}</Text>
-          <Text>FSI: {patchResult.finalStressIndex.toFixed(2)}</Text>
-          <Text>Recovery: {patchResult.recovery}</Text>
+      {/* ✅ RESULTS */}
+      <View style={{ marginTop: 10 }}>
+        {coralStatus && <Text>Coral Status: {coralStatus}</Text>}
+        {confidence !== null && <Text>Confidence: {confidence.toFixed(2)}</Text>}
+        {bleachingPrediction !== null && (
+          <Text>Bleaching Prediction: {bleachingPrediction.toFixed(2)}%</Text>
+        )}
 
-          <Text>Temperature: {getStressLabel(patchResult.tempStress)}</Text>
-          <Text>Pollution: {getStressLabel(patchResult.pollutionStress)}</Text>
-          <Text>Acidification: {getStressLabel(patchResult.acidStress)}</Text>
-
-          {location && (
-            <Text>
-              GPS: {location.latitude.toFixed(4)}, {location.longitude.toFixed(4)}
-            </Text>
-          )}
-        </View>
-      )}
+        {location && (
+          <Text>
+            GPS: {location.latitude.toFixed(4)}, {location.longitude.toFixed(4)}
+          </Text>
+        )}
+      </View>
     </View>
   );
 }
@@ -394,3 +372,4 @@ const styles = StyleSheet.create({
 });
 
 export default App;
+

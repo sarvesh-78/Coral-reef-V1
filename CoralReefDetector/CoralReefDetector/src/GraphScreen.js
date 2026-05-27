@@ -19,10 +19,12 @@ export default function GraphScreen({ siteKey, scans, onBack }) {
   const spacing = 70
   const graphWidth = (scans.length - 1) * spacing + 40
 
-  const values = scans.map(s => Number(s.final_stress_index) || 0)
+  // ✅ USE BLEACHING %
+  const values = scans.map(s => Number(s.bleaching_percentage) || 0)
   const labels = scans.map(s => new Date(s.created_at).toLocaleDateString())
 
-  const normalizeY = (value) => graphHeight - (value * graphHeight)
+  // Normalize (0–100 scale)
+  const normalizeY = (value) => graphHeight - (value / 100) * graphHeight
 
   const points = values.map((value, index) => ({
     x: index * spacing + 40,
@@ -36,9 +38,9 @@ export default function GraphScreen({ siteKey, scans, onBack }) {
         <Text style={styles.backText}>← Back to History</Text>
       </Pressable>
 
-      <Text style={styles.title}>Coral Stress Trend</Text>
+      <Text style={styles.title}>Bleaching Trend</Text>
       <Text style={styles.subtitle}>📍 {siteKey}</Text>
-      <Text style={styles.yAxisLabel}>Final Stress Index (0 - 1)</Text>
+      <Text style={styles.yAxisLabel}>Bleaching Percentage (0 - 100)</Text>
 
       <ScrollView horizontal>
 
@@ -67,7 +69,7 @@ export default function GraphScreen({ siteKey, scans, onBack }) {
             />
 
             {/* Y SCALE */}
-            {[1, 0.75, 0.5, 0.25, 0].map((val, i) => {
+            {[100, 75, 50, 25, 0].map((val, i) => {
               const y = normalizeY(val) + 20
               return (
                 <React.Fragment key={i}>
@@ -124,7 +126,7 @@ export default function GraphScreen({ siteKey, scans, onBack }) {
                 fontSize: 10
               }}
             >
-              {values[i].toFixed(2)}
+              {values[i].toFixed(1)}%
             </Text>
           ))}
 

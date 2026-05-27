@@ -14,9 +14,6 @@ class CoralModule(reactContext: ReactApplicationContext) :
 
     private var interpreter: Interpreter? = null
     private val inputSize = 224
-    private val numClasses = 5
-    private val classNames =
-            arrayOf("Bleached_Mild", "Bleached_Moderate", "Bleached_Severe", "Dead", "Healthy")
 
     override fun getName(): String = "CoralModule"
 
@@ -28,7 +25,6 @@ class CoralModule(reactContext: ReactApplicationContext) :
         }
     }
 
-    /** Copy content URI to temp file for Android */
     @ReactMethod
     fun copyContentUriToFile(uriString: String, promise: Promise) {
         try {
@@ -44,7 +40,6 @@ class CoralModule(reactContext: ReactApplicationContext) :
         }
     }
 
-    /** Predict (classify image and return full scores) */
     @ReactMethod
     fun classifyImage(imagePath: String, promise: Promise) {
         try {
@@ -60,28 +55,22 @@ class CoralModule(reactContext: ReactApplicationContext) :
             }
 
             val inputBuffer = ImageUtils.bitmapToFloatBuffer(bitmap, inputSize, inputSize)
-            val outputArray = Array(1) { FloatArray(numClasses) }
+
+            // Single output (sigmoid)
+            val outputArray = Array(1) { FloatArray(1) }
 
             interpreter!!.run(inputBuffer, outputArray)
 
-            // Find max class
-            var maxIdx = 0
-            var maxVal = outputArray[0][0]
-            for (i in 1 until numClasses) {
-                if (outputArray[0][i] > maxVal) {
-                    maxVal = outputArray[0][i]
-                    maxIdx = i
-                }
-            }
+            val prob = outputArray[0][0]
+
+            val threshold = 0.6f
+            val label = if (prob > threshold) "Healthy" else "Bleached"
 
             val result = Arguments.createMap()
-            result.putString("label", classNames[maxIdx])
+            result.putString("label", label)
 
-            // Add scores array
             val scoresArray = Arguments.createArray()
-            for (i in 0 until numClasses) {
-                scoresArray.pushDouble(outputArray[0][i].toDouble())
-            }
+            scoresArray.pushDouble(prob.toDouble())
             result.putArray("scores", scoresArray)
 
             promise.resolve(result)
@@ -90,7 +79,6 @@ class CoralModule(reactContext: ReactApplicationContext) :
         }
     }
 
-    /** Optional method to call model load explicitly from JS */
     @ReactMethod
     fun loadModelPromise(promise: Promise) {
         try {
@@ -101,9 +89,8 @@ class CoralModule(reactContext: ReactApplicationContext) :
         }
     }
 
-    /** Load TFLite model from assets */
     private fun loadModel() {
-        val afd = reactApplicationContext.assets.openFd("coral_model_finetuned.tflite")
+        val afd = reactApplicationContext.assets.openFd("mobilenet_binary_model.tflite")
         val fileChannel = afd.createInputStream().channel
         val mapped: MappedByteBuffer =
                 fileChannel.map(FileChannel.MapMode.READ_ONLY, afd.startOffset, afd.declaredLength)

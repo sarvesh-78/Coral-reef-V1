@@ -108,15 +108,26 @@ export default function HistoryScreen({ onBack }) {
                   />
                 )}
 
-                <Text>Label: {scan.dominant_label}</Text>
-                <Text>Main Stress: {scan.main_stress_factor}</Text>
-                <Text>
-                  Final Stress Index: {Number(scan.final_stress_index).toFixed(2)}
-                </Text>
-                <Text>Recovery: {scan.recovery}</Text>
-                <Text>Temp: {scan.surface_temp}</Text>
-                <Text>WQI: {scan.wqi}</Text>
-                <Text>pH: {scan.ph}</Text>
+                {/* ✅ NEW FIELDS */}
+                <Text>Coral Status: {scan.coral_status}</Text>
+
+                {scan.confidence !== null && (
+                  <Text>Confidence: {Number(scan.confidence).toFixed(2)}</Text>
+                )}
+
+                {scan.bleaching_percentage !== null && (
+                  <Text>
+                    Bleaching: {Number(scan.bleaching_percentage).toFixed(2)}%
+                  </Text>
+                )}
+
+                {/* ✅ ENVIRONMENTAL INPUTS */}
+                <Text>DHW: {scan.tsa_dhw}</Text>
+                <Text>SSTA: {scan.ssta}</Text>
+                <Text>SSTA Freq: {scan.ssta_frequency}</Text>
+                <Text>Max Temp: {scan.temperature_maximum}</Text>
+                <Text>Turbidity: {scan.turbidity}</Text>
+                <Text>Depth: {scan.depth_m}</Text>
 
                 <Text style={styles.date}>
                   {new Date(scan.created_at).toLocaleString()}
